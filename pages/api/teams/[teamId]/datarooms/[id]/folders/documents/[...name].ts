@@ -1,0 +1,138 @@
+// MIGRATION STATUS: CRITICAL
+// App Router equivalent: none (Phase 2 migration target)
+// See docs/PAGES-ROUTER-MIGRATION.md
+import { NextApiRequest, NextApiResponse } from "next";
+
+import { authOptions } from "@/lib/auth/auth-options";
+import slugify from "@sindresorhus/slugify";
+import { getServerSession } from "next-auth/next";
+
+import prisma from "@/lib/prisma";
+import { CustomUser } from "@/lib/types";
+import { sortItemsByIndexAndName } from "@/lib/utils/sort-items-by-index-name";
+import { folderPathSchema } from "@/lib/zod/schemas/folders";
+import { reportError } from "@/lib/error";
+import { logger } from "@/lib/logger";
+
+export default async function handle(
+  req: NextApiRequest,
+  res: NextApiResponse,
+) {
+  if (req.method === "GET") {
+    // GET /api/teams/:teamId/datarooms/:id/folders/documents/:name
+    const session = await getServerSession(req, res, authOptions);
+    if (!session) {
+      return res.status(401).end("Unauthorized");
+    }
+
+    const userId = (session.user as CustomUser).id;
+    const {
+      teamId,
+      id: dataroomId,
+      name,
+    } = req.query as { teamId: string; id: string; name: string[] };
+
+    // Validate that name is an array of strings using shared Zod schema
+    const nameValidation = folderPathSchema.safeParse(name);
+    if (!nameValidation.success) {
+      return res.status(400).json({
+        error: "Invalid folder path format",
+      });
+    }
+
+    const validatedName = nameValidation.data;
+    // Slugify each path segment to match how folders are stored in the database
+    const slugifiedPath = validatedName.map((segment) => slugify(segment));
+    const path = "/" + slugifiedPath.join("/"); // construct the materialized path
+
+    try {
+      // Check if the user is part of the team
+      const team = await prisma.team.findUnique({
+        where: {
+          id: teamId,
+          users: {
+            some: {
+              userId: userId,
+            },
+          },
+        },
+      });
+
+      if (!team) {
+        return res.status(401).end("Unauthorized");
+      }
+
+      const folder = await prisma.dataroomFolder.findUnique({
+        where: {
+          dataroomId_path: {
+            dataroomId,
+            path,
+          },
+        },
+        select: {
+          id: true,
+          parentId: true,
+        },
+      });
+
+      if (!folder) {
+        return res.status(404).end("Folder not found");
+      }
+
+      const documents = await prisma.dataroomDocument.findMany({
+        where: {
+          dataroomId: dataroomId,
+          folderId: folder.id,
+        },
+        orderBy: [
+          { orderIndex: "asc" },
+          {
+            document: {
+              name: "asc",
+            },
+          },
+        ],
+        select: {
+          id: true,
+          dataroomId: true,
+          folderId: true,
+          createdAt: true,
+          updatedAt: true,
+          orderIndex: true,
+          hierarchicalIndex: true,
+          document: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              versions: {
+                select: { id: true, hasPages: true },
+              },
+              isExternalUpload: true,
+              _count: {
+                select: {
+                  views: { where: { dataroomId } },
+                  versions: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const sortedDocuments = sortItemsByIndexAndName(documents);
+
+      return res.status(200).json(sortedDocuments);
+    } catch (error) {
+      reportError(error as Error);
+      logger.error("Request error", { module: "teams", metadata: { error: (error as Error).message } });
+      return res
+        .status(500)
+        .json({ error: "Internal server error" });
+    }
+  } else {
+    // We only allow GET requests
+    res.setHeader("Allow", ["GET"]);
+    return res.status(405).end(`Method ${req.method} Not Allowed`);
+  }
+}

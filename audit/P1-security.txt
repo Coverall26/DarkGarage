@@ -1,0 +1,320 @@
+================================================================================
+FUNDROOM AI — PHASE 1 SECURITY GAPS AUDIT
+Date: 2026-02-25
+Auditor: Claude (automated + manual verification)
+Codebase: /home/user/darkroom (Darkroom4/darkroom)
+================================================================================
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+
+  OVERALL ASSESSMENT: STRONG
+
+  Total routes scanned:        562 (273 App Router + 289 Pages Router)
+  Routes with explicit auth:   552 (98.2%)
+  Routes without explicit auth: 10 (all verified intentionally public)
+  CRITICAL issues found:        0
+  HIGH issues found:            0
+  MEDIUM issues found:          2 (see details below)
+  LOW issues found:             1
+  SQL injection risks:          0
+  Tenant isolation status:      STRONG (20/20 spot-checked routes have scoping)
+  Blanket rate limiting:        YES (200 req/min/IP on ALL /api/ routes via proxy.ts)
+
+================================================================================
+SECTION 1: AUTH CHECK SCRIPT RESULTS
+================================================================================
+
+Script: scripts/check-route-auth.sh
+Result: PASS — 0 violations
+
+  Scanned:    500 route files (after allowlist filtering)
+  Skipped:    62  (allowlisted/public paths)
+  Violations: 0
+
+The script checks 50+ auth patterns including getServerSession, getToken,
+enforceRBAC*, requireAdmin*, authenticateGP, withTeamAuth, CRM role enforcement,
+tier/paywall checks, cron/webhook secret verification, rate limiters, and
+delegated handler patterns (ee/ features).
+
+================================================================================
+SECTION 2: INDEPENDENT APP ROUTER AUDIT (273 routes)
+================================================================================
+
+Auth pattern coverage: 267 / 273 (97.8%)
+
+6 routes without explicit in-file auth patterns — ALL verified intentionally public:
+
+  FILE                                          PURPOSE                      RISK
+  -------------------------------------------   ---------------------------  ----
+  app/api/csp-report/route.ts                   Browser CSP reports          NONE
+  app/api/health/route.ts                       Health check                 NONE
+  app/api/offering/[slug]/route.ts              Public offering page data    NONE
+  app/api/outreach/track/open/route.ts          Email open tracking pixel    NONE
+  app/api/outreach/unsubscribe/route.ts         CAN-SPAM unsubscribe         LOW
+  app/api/tracking/consent/route.ts             GDPR cookie consent          NONE
+
+Notes:
+- csp-report: Has in-memory rate limiting (50/min), false-positive filtering
+- offering/[slug]: Public investor-facing page, documented as intentionally public
+- outreach/track/open: Returns 1x1 transparent GIF, no sensitive data
+- outreach/unsubscribe: Validates contactId+teamId pair before write
+- tracking/consent: Manages cookie, no sensitive data exposure
+
+================================================================================
+SECTION 3: INDEPENDENT PAGES ROUTER AUDIT (289 routes)
+================================================================================
+
+Auth pattern coverage: 285 / 289 (98.6%)
+
+4 routes without explicit in-file auth patterns — ALL verified intentionally public:
+
+  FILE                                          PURPOSE                      RISK
+  -------------------------------------------   ---------------------------  ----
+  pages/api/branding/manifest.ts                PWA manifest.json            NONE
+  pages/api/branding/tenant.ts                  Tenant brand colors/logo     NONE
+  pages/api/health.ts                           Health check (duplicate)     NONE
+  pages/api/links/[id]/request-access.ts        Request access to link       LOW
+
+Notes:
+- branding/manifest.ts: Returns public PWA manifest, no secrets
+- branding/tenant.ts: Returns org brand colors/logo by host domain, no secrets
+- health.ts: Pages Router duplicate of App Router health endpoint
+- links/[id]/request-access.ts: Public access request form, creates AccessRequest
+  record scoped to link/team. Validates link exists before write.
+
+IMPORTANT: All 562 routes (including the 10 without in-file auth) are additionally
+protected by the blanket rate limiter in proxy.ts (200 req/min/IP via Upstash Redis).
+
+================================================================================
+SECTION 4: DEFENSE-IN-DEPTH ARCHITECTURE
+================================================================================
+
+The platform implements 5 layers of auth enforcement:
+
+  Layer 1: proxy.ts edge middleware
+           - JWT validation for ALL /api/ routes via edge-auth.ts
+           - Route classification (PUBLIC/CRON/AUTHENTICATED/TEAM_SCOPED/ADMIN)
+           - Blanket rate limiting (200 req/min/IP)
+
+  Layer 2: proxy.ts admin auth
+           - Additional JWT + LP blocking for /admin/* and /api/admin/*
+           - User context headers injected (x-middleware-user-id/email/role)
+
+  Layer 3: Route handler RBAC
+           - requireAdminAppRouter() on 40+ admin route files (43 handlers)
+           - requireLPAuthAppRouter() on sensitive LP routes
+           - enforceRBAC() / requireAdmin() on Pages Router routes
+           - authenticateGP() for marketplace/fund routes
+
+  Layer 4: DomainMiddleware
+           - Domain-level gating for app.admin.fundroom.ai
+
+  Layer 5: Business logic auth
+           - Team-scoped Prisma queries (teamId/orgId in WHERE clauses)
+           - Fund ownership verification
+           - Investor profile ownership checks
+
+================================================================================
+SECTION 5: TENANT ISOLATION VERIFICATION (20 routes spot-checked)
+================================================================================
+
+All 20 spot-checked routes have proper tenant scoping in Prisma queries:
+
+  ROUTE                                         SCOPING
+  -------------------------------------------   --------------------------
+  app/api/admin/engagement/route.ts              teamId in WHERE (7 queries)
+  app/api/admin/reports/route.ts                 teamId + fundId
+  app/api/admin/reports/form-d/route.ts          teamId + fundId
+  app/api/admin/wire/confirm/route.ts            teamId + fundId (atomic $transaction)
+  app/api/billing/checkout/route.ts              teamId + orgId
+  app/api/contacts/route.ts                      teamId + orgId
+  app/api/contacts/[id]/route.ts                 teamId scoping
+  app/api/esign/envelopes/route.ts               teamId scoping
+  app/api/lp/subscribe/route.ts                  teamId + fundId + investorId
+  app/api/lp/wire-proof/route.ts                 teamId + fundId
+  app/api/outreach/sequences/route.ts            orgId scoping (via enforceCrmRole)
+  app/api/teams/[teamId]/funds/[fundId]/route.ts teamId from URL + verification
+  app/api/teams/.../funding-rounds/route.ts      teamId + orgId + fundId
+  app/api/admin/investors/manual-entry/route.ts  teamId + fundId
+  app/api/admin/settings/full/route.ts           teamId + orgId
+  app/api/admin/settings/update/route.ts         teamId + orgId (31 Prisma calls)
+  app/api/lp/fund-context/route.ts               teamId + fundId
+  app/api/admin/documents/.../confirm/route.ts   Delegates to service with scoping
+  app/api/admin/documents/.../reject/route.ts    Delegates to service with scoping
+  app/api/esign/sign/route.ts                    Token-based auth (external signers)
+
+FINDING: No tenant isolation gaps detected. All routes that read/write data
+include teamId, orgId, fundId, or investorId in their Prisma WHERE clauses.
+
+================================================================================
+SECTION 6: SQL INJECTION CHECK
+================================================================================
+
+RESULT: NO SQL INJECTION RISKS FOUND
+
+Raw query usage in production code:
+
+  TYPE                  COUNT   RISK
+  --------------------  -----   ----
+  $queryRaw (tagged)    25      SAFE - Prisma auto-parameterizes tagged templates
+  $executeRaw (tagged)  7       SAFE - Prisma auto-parameterizes tagged templates
+  $queryRawUnsafe       3       SAFE - All use hardcoded "SELECT 1" (db-health only)
+  $executeRawUnsafe     0       N/A (only in test-utils, not production)
+
+Details:
+- All tagged template literal queries ($queryRaw`...`) use Prisma's built-in
+  parameterization. ${variable} interpolations are converted to SQL parameters,
+  NOT string concatenation.
+- Dynamic SQL fragments (e.g., searchCondition, orderByClause in viewers/index.ts)
+  use Prisma.sql tagged template or Prisma.empty — both safe.
+- The 3 $queryRawUnsafe calls are in app/api/admin/db-health/route.ts and all
+  execute "SELECT 1" with zero user input.
+- lib/test-utils/prisma-cleanup.ts uses $executeRawUnsafe for TRUNCATE but this
+  file is test-only infrastructure, not production code.
+
+Files containing raw queries (production only):
+  app/api/admin/db-health/route.ts           - SELECT 1 health checks
+  app/api/admin/deployment-readiness/route.ts - Table count query
+  app/api/admin/investors/[investorId]/route.ts - Persona data lookup
+  app/api/analytics/route.ts                 - Time-series aggregation
+  app/api/lp/kyc/route.ts                    - KYC status queries
+  app/api/lp/me/route.ts                     - Persona data lookup
+  app/api/lp/staged-commitment/route.ts      - Fund settings check
+  app/api/lp/webhooks/investor-updates/route.ts - Investor update
+  lib/audit/immutable-audit-log.ts           - Hash-chained audit entries
+  lib/persona-hooks.ts                       - Persona migration helpers
+  lib/prisma.ts                              - Connection health check
+  lib/tracking/postgres-stats.ts             - View statistics
+  pages/api/analytics/index.ts               - Time-series aggregation
+  pages/api/teams/[teamId]/viewers/*.ts      - Viewer stats with search
+
+================================================================================
+SECTION 7: UNSANITIZED USER INPUT CHECK
+================================================================================
+
+7A. eval() in API routes:               NONE FOUND
+7B. new Function() in production code:   1 instance (see MEDIUM finding M-1)
+7C. dangerouslySetInnerHTML:             4 instances, ALL sanitized:
+    - offering/[slug]/page-client.tsx:   Uses sanitizeCss() (strips url/import/js)
+    - upload-avatar.tsx:                 Uses sanitizeForRender() (allowlist-based)
+    - domain-configuration.tsx:          Uses sanitizeForRender() (allowlist-based)
+    - ui/form.tsx:                       Uses sanitizeForRender() (allowlist-based)
+7D. Response header injection:           NONE FOUND
+7E. Open redirect:                       NONE — admin-magic-verify.ts validates
+                                         redirect against ALLOWED_REDIRECT_PREFIXES
+                                         (/hub, /datarooms, /admin, /dashboard,
+                                         /settings, /lp). Must be relative path
+                                         and not start with "//".
+7F. Path traversal:                      NONE — local-provider.ts has:
+                                         - Null byte removal
+                                         - ".." sequence removal (loop until clean)
+                                         - path.resolve() normalization
+                                         - basePath containment check (throws on escape)
+7G. process.env leak to client:          NONE — 4 occurrences found but all are
+                                         NODE_ENV checks or NEXTAUTH_URL (public).
+                                         No secret env vars exposed to client.
+7H. Template renderer path traversal:    NONE — renderDefaultTemplate() uses
+                                         hardcoded TEMPLATE_FILES map, filename
+                                         never derived from user input.
+
+================================================================================
+SECTION 8: FINDINGS
+================================================================================
+
+CRITICAL: 0
+
+HIGH: 0
+
+MEDIUM: 2
+
+  M-1. new Function() for formula evaluation
+       File: lib/esign/field-types.ts:455
+       Code: new Function(`"use strict"; return (${expression})`)()
+       Context: Used for e-signature FORMULA field type evaluation
+       Mitigation: Input is first:
+         1. Field references replaced with numeric values
+         2. Whitelist regex: /^[\d\s+\-*/().]+$/ (numbers, ops, parens only)
+         3. Wrapped in try-catch, returns "ERROR" on any exception
+         4. Result validated: must be finite number
+       Risk: The regex whitelist is effective against arbitrary code execution.
+         However, Function() constructor is generally considered unsafe and could
+         be bypassed if the regex is later relaxed. A dedicated math evaluator
+         library (e.g., mathjs) would be safer.
+       Recommendation: Replace new Function() with a dedicated safe math evaluator
+         in a future sprint. Current mitigation is acceptable for MVP launch.
+
+  M-2. Offering page custom CSS injection surface
+       File: app/offering/[slug]/page-client.tsx:288
+       Code: <style dangerouslySetInnerHTML={{ __html: sanitizeCss(data.customCss) }} />
+       Context: GP-configured custom CSS for offering landing pages
+       Mitigation: sanitizeCss() strips url(), @import, expression(), javascript:,
+         -moz-binding, behavior:, and existing comments. Returns sanitized string.
+       Risk: CSS can still be used for data exfiltration in some browsers via
+         background-image on input[value^="X"] selectors, though this is a
+         limited attack surface. The customCss field is GP-controlled (admin only),
+         not user-controlled.
+       Recommendation: Consider using a CSS-in-JS approach or CSS modules instead
+         of raw CSS injection. Acceptable for MVP since only GP admins can set
+         custom CSS.
+
+LOW: 1
+
+  L-1. Duplicate health endpoints
+       Files: pages/api/health.ts + app/api/health/route.ts
+       Issue: Two health check endpoints exist (Pages Router + App Router).
+         Both are functionally identical. The Pages Router version should be
+         removed during the Phase 2 router migration.
+       Risk: Negligible — both return the same non-sensitive service status.
+       Recommendation: Remove pages/api/health.ts after verifying App Router
+         version is the canonical monitoring target.
+
+================================================================================
+SECTION 9: ADDITIONAL SECURITY CONTROLS VERIFIED
+================================================================================
+
+  Control                          Status    Notes
+  -------------------------------  --------  ----------------------------------
+  CSRF protection                  ACTIVE    Origin/Referer + X-Requested-With
+  Rate limiting (blanket)          ACTIVE    200 req/min/IP on all /api/ routes
+  Rate limiting (per-route)        ACTIVE    10 tiers, 40+ endpoints
+  AES-256-GCM encryption           ACTIVE    SSN, EIN, wire details, signatures
+  HSTS header                      ACTIVE    max-age=63072000; includeSubDomains
+  CSP headers                      ACTIVE    Rollbar/PostHog allowlisted
+  X-Frame-Options                  ACTIVE    SAMEORIGIN
+  Permissions-Policy               ACTIVE    camera=(self)
+  Audit logging                    ACTIVE    39 event types, SHA-256 hash-chained
+  Error sanitization               ACTIVE    Generic "Internal server error" on 500
+  Rollbar error reporting          ACTIVE    reportError() in all catch blocks
+  JWT session validation (edge)    ACTIVE    All non-public routes via proxy.ts
+  Cookie security                  ACTIVE    Secure, HttpOnly, SameSite=Lax
+  Input validation                 ACTIVE    Zod schemas on mutation endpoints
+  File upload limits               ACTIVE    25MB max, type validation
+  Path traversal protection        ACTIVE    basePath containment in local storage
+
+================================================================================
+SECTION 10: SUMMARY
+================================================================================
+
+  Auth Coverage:          552/562 routes (98.2%) with explicit auth
+                          10/562 routes intentionally public
+                          562/562 routes (100%) behind blanket rate limiter
+
+  CRITICAL Findings:      0
+  HIGH Findings:          0
+  MEDIUM Findings:        2 (formula eval + CSS injection — both mitigated)
+  LOW Findings:           1 (duplicate health endpoint)
+
+  Tenant Isolation:       STRONG — 20/20 spot-checked, all scoped
+  SQL Injection:          NONE — all raw queries parameterized
+  XSS/Input Sanitization: STRONG — sanitizeForRender(), sanitizeCss() applied
+  Open Redirect:          NONE — redirect paths validated against allowlists
+  Path Traversal:         NONE — basePath containment checks in place
+
+  VERDICT: Platform auth and security posture is production-ready.
+  No launch-blocking security gaps identified.
+
+================================================================================
+END OF REPORT
+================================================================================

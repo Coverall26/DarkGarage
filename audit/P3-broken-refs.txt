@@ -1,0 +1,192 @@
+================================================================================
+PHASE 3 — BROKEN REFERENCES AUDIT REPORT
+FundRoom AI Codebase (/home/user/darkroom)
+Generated: 2026-02-25
+================================================================================
+
+EXECUTIVE SUMMARY
+-----------------
+Total imports checked:        8,233  (7,189 @/ aliased + 1,044 relative)
+Broken imports found:             0
+Broken API endpoint calls:        1  (genuinely broken)
+Broken Prisma model refs:        0
+
+Overall Status: CLEAN (1 minor issue in enterprise feature module)
+
+================================================================================
+SECTION 1: TYPESCRIPT IMPORT AUDIT
+================================================================================
+
+Methodology:
+- Scanned all .ts/.tsx files in app/, lib/, components/, pages/, ee/
+- Excluded: node_modules/, .next/, __tests__/, e2e/
+- Checked @/ aliased imports (7,189 total) by resolving to project root
+- Checked relative imports (1,044 total: 251 ../ patterns + 793 ./ patterns)
+- For each import, verified target file exists with extensions: .ts, .tsx, .js,
+  .jsx, .mjs, or /index.{ts,tsx,js}
+
+Results:
+  @/ aliased imports checked: 7,189
+  Broken @/ imports:               0
+
+  Relative imports checked:    1,044
+  Broken relative imports:         0
+
+  TOTAL IMPORTS CHECKED:       8,233
+  TOTAL BROKEN IMPORTS:            0
+
+Status: ALL CLEAR
+
+================================================================================
+SECTION 2: API ENDPOINT REFERENCE AUDIT
+================================================================================
+
+Methodology:
+- Scanned all .ts/.tsx source files for fetch("/api/...) and fetch(`/api/...)
+  patterns, as well as useSWR("/api/...) and string literals referencing /api/
+- Cross-referenced against all existing API routes in:
+  - Pages Router: pages/api/ (385 route files)
+  - App Router: app/api/ (205 route files)
+  - Enterprise Router: app/(ee)/api/ (additional route files in route group)
+- Dynamic route segments ([param]) matched against any value
+- Catch-all routes ([[...param]]) matched against variable-length paths
+- Filtered out false positives: middleware prefix patterns, JSDoc examples,
+  external API calls, URL filter/exclusion patterns
+
+Total unique API paths checked: 223
+
+GENUINELY BROKEN API ENDPOINT CALLS: 1
+---------------------------------------
+
+1. /api/assistants
+   File:     components/documents/document-header.tsx:241 and :268
+   Usage:    fetch("/api/assistants", { method: "POST" | "DELETE" })
+   Purpose:  Activate/deactivate AI document assistant
+   Status:   BROKEN — No route file exists anywhere in the codebase
+             (not in pages/api/, app/api/, or app/(ee)/api/)
+   Impact:   LOW — This is a legacy Papermark AI assistant feature.
+             The button will trigger a network error if clicked.
+   Fix:      Either create app/api/assistants/route.ts or remove the
+             dead feature code from document-header.tsx
+
+
+VERIFIED FALSE POSITIVES (not broken):
+--------------------------------------
+
+These were initially flagged but confirmed as valid after investigation:
+
+a. /api/ai/chat, /api/ai/chat/[chatId], /api/ai/chat/[chatId]/messages
+   File:     ee/features/ai/components/viewer-chat-panel.tsx
+   Status:   VALID — Routes exist in app/(ee)/api/ai/chat/ (route group)
+
+b. /api/workflows, /api/workflows/[workflowId]
+   File:     ee/features/workflows/components/workflow-header.tsx
+   Status:   VALID — Routes exist in app/(ee)/api/workflows/ (route group)
+
+c. /api/faqs, /api/faqs/[faqId]
+   File:     ee/features/conversations/components/viewer/faq-section.tsx
+   Status:   VALID — Route exists in app/(ee)/api/faqs/route.ts (route group)
+
+d. /api/admin/fund/[id], /api/admin/fund/[id]/pending-actions, etc.
+   File:     app/admin/fund/[id]/page-client.tsx
+   Status:   VALID — Routes exist (template literals truncated by scanner)
+
+e. /api/download/doc123
+   File:     components/documents/encrypted-download-button.tsx:17
+   Status:   FALSE POSITIVE — JSDoc @example comment, not actual code
+
+f. /api/v2/connection (lib/integrations/github.ts)
+   Status:   FALSE POSITIVE — External Nango API URL, not FundRoom API
+
+g. /api/tracking (lib/tracking/failure-tracker.ts)
+   Status:   FALSE POSITIVE — URL filter pattern (url.includes()), not a fetch
+
+h. All route-config.ts, admin-auth.ts references
+   Status:   FALSE POSITIVE — Middleware prefix patterns for route classification,
+             not actual API endpoint calls
+
+================================================================================
+SECTION 3: PRISMA MODEL REFERENCE AUDIT
+================================================================================
+
+Methodology:
+- Extracted all 140 model names from prisma/schema.prisma
+- Converted to camelCase (Prisma client accessor pattern)
+- Scanned all source files for prisma.{modelName}.{crudMethod} patterns
+  where crudMethod is one of: findMany, findFirst, findUnique, create,
+  createMany, update, updateMany, upsert, delete, deleteMany, count,
+  aggregate, groupBy
+- Cross-referenced each accessed model name against the schema
+
+Total Prisma models in schema:       140
+Unique models accessed in code:      123  (17 models defined but not directly
+                                           accessed via CRUD — used as relation
+                                           targets or enum-only models)
+Broken Prisma model references:        0
+
+Status: ALL CLEAR
+
+All 123 model names accessed via Prisma client CRUD methods exist in the schema:
+  accessRequest, accreditationAck, agreement, annotationImage, auditLog,
+  aumSnapshot, bankLink, brand, capitalCall, capitalCallResponse, chat,
+  chatMessage, contact, contactActivity, contactNote, contactVault,
+  conversation, conversationParticipant, conversationView,
+  customFieldResponse, dataroom, dataroomBrand, dataroomDocument,
+  dataroomFaqItem, dataroomFolder, dataroomQuestion,
+  dataroomQuestionMessage, deal, dealActivity, dealAllocation,
+  dealDocument, dealInterest, dealNote, dealStageHistory, distribution,
+  document, documentAnnotation, documentFiling, documentPage,
+  documentTemplate, documentUpload, documentVersion, domain, emailTemplate,
+  entity, envelope, envelopeRecipient, esigUsage, esigUsageRecord,
+  feedback, feedbackResponse, folder, fund, fundAggregate, fundClose,
+  fundPricingTier, fundReport, fundingRound, fundroomActivation,
+  generatedReport, incomingWebhook, installedIntegration, investment,
+  investmentTranche, investor, investorDocument, investorNote, invitation,
+  lPDocument, lPDocumentReview, link, linkPreset, magicLinkCallback,
+  manualInvestment, marketplaceListing, marketplaceWaitlist, message,
+  notification, notificationPreference, offeringPage, onboardingFlow,
+  organization, organizationDefaults, organizationIntegrationCredential,
+  outreachSequence, pageView, pendingContact, pendingPortalUpdate,
+  permissionGroup, permissionGroupAccessControls, platformSettings,
+  profileChangeRequest, pushSubscription, reaction, reportTemplate,
+  restrictedToken, sentEmail, sequenceEnrollment, signatureAuditLog,
+  signatureDocument, signatureField, signatureRecipient, signatureTemplate,
+  subscription, tag, tagItem, team, transaction, user, userTeam,
+  verificationToken, view, viewer, viewerGroup, viewerGroupAccessControls,
+  viewerGroupMembership, viewerInvitation, viewerNote, webhook, workflow,
+  workflowExecution, workflowStep, workflowStepLog
+
+Models defined in schema but not directly accessed via CRUD (17):
+  account, accreditationGateResponse, agreementResponse, capTableEntry,
+  customField, entityInvestor, integration, marketplaceEvent,
+  organizationAuditLog, organizationSecurityPolicy, outreachStep,
+  securityIssuance, session, teamDefaults, verificationCode,
+  waterfallCalculation, yearInReview
+
+  Note: These models are typically accessed through Prisma relations
+  (include/select), used as enum containers, or reserved for Phase 2/3
+  features. Their absence from direct CRUD does not indicate an issue.
+
+================================================================================
+SECTION 4: SUMMARY & RECOMMENDATIONS
+================================================================================
+
+BROKEN REFERENCES FOUND: 1 (RESOLVED)
+
+1. [LOW] /api/assistants — Dead API endpoint reference — RESOLVED
+   File:     /home/user/darkroom/components/documents/document-header.tsx
+   Lines:    241, 268
+   Impact:   Clicking "AI Assistant" toggle on a document will fail with
+             a network error. This is a legacy Papermark feature not yet
+             ported to FundRoom's AI system.
+   Resolution: Removed dead functions `activateOrRedirectAssistant` and
+               `activateOrDeactivateAssistant` from document-header.tsx.
+               The AI functionality now uses DocumentAIDialog component
+               via the (ee) route group (/api/ai/*).
+
+NO BROKEN REFERENCES REMAIN across 8,233 imports, 223 API endpoint
+references, and 123 Prisma model access patterns.
+
+================================================================================
+END OF REPORT
+================================================================================

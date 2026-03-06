@@ -1,0 +1,364 @@
+================================================================================
+FUNDROOM AI — PHASE 2 DUPLICATE ROUTES AUDIT
+Date: 2026-02-25
+Total App Router routes: 273
+Total Pages Router routes: 289
+Total duplicate pairs found: 51
+================================================================================
+
+EXECUTIVE SUMMARY
+=================
+
+51 API routes exist in BOTH App Router (app/api/) and Pages Router (pages/api/).
+
+In Next.js 16, when both routers define the same route, the App Router takes
+priority. This means the Pages Router versions are NEVER called by the runtime
+for these 51 routes — they are dead code.
+
+Of the 51 duplicates:
+  - 17 Pages Router files are already marked @deprecated (billing, links, dataroom, document, s3)
+  - 6 are thin 16-line wrapper stubs delegating to ee/features/ (billing cancellation routes)
+  - 6 are webhook handlers (signature verification in both — App Router wins)
+  - 8 are file upload/download handlers
+  - 14 are link/link-sub-route handlers
+
+RECOMMENDATION: Delete all 51 Pages Router duplicate files. The App Router
+versions are the active implementations. The Pages Router versions are dead
+code that can never be reached.
+
+EXCEPTION: pages/api/auth/[...nextauth].ts — This file is NOT a duplicate.
+It is the only NextAuth handler and has no App Router equivalent. MUST KEEP.
+
+================================================================================
+
+DUPLICATE ROUTE TABLE
+=====================
+
+Route Path                                               | App Router File                                                                    | Pages Router File                                                                    | App Lines | Pages Lines | @deprecated? | Frontend Callers     | Recommendation
+---------------------------------------------------------|------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|-----------|-------------|--------------|----------------------|------------------
+/api/analytics                                           | app/api/analytics/route.ts                                                         | pages/api/analytics/index.ts                                                         |       554 |         555 | No           | 6 (components, SWR)  | KEEP App, DELETE Pages
+/api/file/browser-upload                                 | app/api/file/browser-upload/route.ts                                               | pages/api/file/browser-upload.ts                                                     |       137 |         139 | No           | 1 (lib/files)        | KEEP App, DELETE Pages
+/api/file/image-upload                                   | app/api/file/image-upload/route.ts                                                 | pages/api/file/image-upload.ts                                                       |        91 |          90 | No           | 1 (lib/utils)        | KEEP App, DELETE Pages
+/api/file/notion                                         | app/api/file/notion/route.ts                                                       | pages/api/file/notion/index.ts                                                       |        56 |          64 | No           | 1 (notion-page)      | KEEP App, DELETE Pages
+/api/file/replit-get                                     | app/api/file/replit-get/route.ts                                                   | pages/api/file/replit-get.ts                                                         |       142 |         132 | No           | 1 (lib/files)        | KEEP App, DELETE Pages
+/api/file/replit-get-proxy                               | app/api/file/replit-get-proxy/route.ts                                             | pages/api/file/replit-get-proxy.ts                                                   |       148 |         138 | No           | 1 (lib/files)        | KEEP App, DELETE Pages
+/api/file/replit-upload                                  | app/api/file/replit-upload/route.ts                                                | pages/api/file/replit-upload.ts                                                      |       131 |         125 | No           | 1 (lib/files)        | KEEP App, DELETE Pages
+/api/file/s3/get-presigned-get-url-proxy                 | app/api/file/s3/get-presigned-get-url-proxy/route.ts                               | pages/api/file/s3/get-presigned-get-url-proxy.ts                                     |       105 |         106 | Yes          | 1 (lib/files)        | KEEP App, DELETE Pages
+/api/file/s3/multipart                                   | app/api/file/s3/multipart/route.ts                                                 | pages/api/file/s3/multipart.ts                                                       |       194 |         177 | No           | 1 (lib/files)        | KEEP App, DELETE Pages
+/api/file/upload-config                                  | app/api/file/upload-config/route.ts                                                | pages/api/file/upload-config.ts                                                      |        30 |          16 | No           | 1 (lib/files)        | KEEP App, DELETE Pages
+/api/health                                              | app/api/health/route.ts                                                            | pages/api/health.ts                                                                  |       113 |         113 | No           | 0 (infra only)       | KEEP App, DELETE Pages
+/api/links                                               | app/api/links/route.ts                                                             | pages/api/links/index.ts                                                             |       300 |         297 | Yes          | 10+ (SWR, link-sheet)| KEEP App, DELETE Pages
+/api/links/[id]                                          | app/api/links/[id]/route.ts                                                        | pages/api/links/[id]/index.ts                                                        |       522 |         574 | Yes          | 5+ (SWR, components) | KEEP App, DELETE Pages
+/api/links/[id]/annotations                              | app/api/links/[id]/annotations/route.ts                                            | pages/api/links/[id]/annotations.ts                                                  |       106 |          94 | Yes          | 2 (SWR)              | KEEP App, DELETE Pages
+/api/links/[id]/approve-access                           | app/api/links/[id]/approve-access/route.ts                                         | pages/api/links/[id]/approve-access.ts                                               |       192 |         168 | Yes          | 0 (webhook/email)    | KEEP App, DELETE Pages
+/api/links/[id]/archive                                  | app/api/links/[id]/archive/route.ts                                                | pages/api/links/[id]/archive.ts                                                      |        76 |          75 | Yes          | 1 (links-table)      | KEEP App, DELETE Pages
+/api/links/[id]/documents/[documentId]                   | app/api/links/[id]/documents/[documentId]/route.ts                                 | pages/api/links/[id]/documents/[documentId].ts                                       |       165 |         148 | Yes          | 0                    | KEEP App, DELETE Pages
+/api/links/[id]/documents/[documentId]/annotations       | app/api/links/[id]/documents/[documentId]/annotations/route.ts                     | pages/api/links/[id]/documents/[documentId]/annotations.ts                           |       143 |         140 | Yes          | 1 (SWR)              | KEEP App, DELETE Pages
+/api/links/[id]/duplicate                                | app/api/links/[id]/duplicate/route.ts                                              | pages/api/links/[id]/duplicate.ts                                                    |       175 |         169 | Yes          | 1 (links-table)      | KEEP App, DELETE Pages
+/api/links/[id]/preview                                  | app/api/links/[id]/preview/route.ts                                                | pages/api/links/[id]/preview.ts                                                      |        41 |          34 | Yes          | 2 (link-sheet, table)| KEEP App, DELETE Pages
+/api/links/[id]/request-access                           | app/api/links/[id]/request-access/route.ts                                         | pages/api/links/[id]/request-access.ts                                               |       203 |         177 | Yes          | 1 (access-form)      | KEEP App, DELETE Pages
+/api/links/[id]/visits                                   | app/api/links/[id]/visits/route.ts                                                 | pages/api/links/[id]/visits.ts                                                       |       149 |         152 | Yes          | 1 (SWR)              | KEEP App, DELETE Pages
+/api/links/domains/[...domainSlug]                       | app/api/links/domains/[...domainSlug]/route.ts                                     | pages/api/links/domains/[...domainSlug].ts                                           |       260 |         261 | No           | 2 (SWR)              | KEEP App, DELETE Pages
+/api/links/download                                      | app/api/links/download/route.ts                                                    | pages/api/links/download/index.ts                                                    |       184 |         209 | Yes          | 5 (viewer comps)     | KEEP App, DELETE Pages
+/api/links/download/bulk                                 | app/api/links/download/bulk/route.ts                                               | pages/api/links/download/bulk.ts                                                     |       418 |         423 | No           | 1 (nav-dataroom)     | KEEP App, DELETE Pages
+/api/links/download/dataroom-document                    | app/api/links/download/dataroom-document/route.ts                                  | pages/api/links/download/dataroom-document.ts                                        |       302 |         303 | No           | 1 (document-card)    | KEEP App, DELETE Pages
+/api/links/download/dataroom-folder                      | app/api/links/download/dataroom-folder/route.ts                                    | pages/api/links/download/dataroom-folder.ts                                          |       398 |         397 | No           | 1 (folder-card)      | KEEP App, DELETE Pages
+/api/links/generate-index                                | app/api/links/generate-index/route.ts                                              | pages/api/links/generate-index.ts                                                    |       253 |         247 | Yes          | 1 (index-file-dialog)| KEEP App, DELETE Pages
+/api/progress-token                                      | app/api/progress-token/route.ts                                                    | pages/api/progress-token.ts                                                          |        69 |          73 | No           | 1 (file-process-bar) | KEEP App, DELETE Pages
+/api/record_reaction                                     | app/api/record_reaction/route.ts                                                   | pages/api/record_reaction.ts                                                         |        77 |          68 | No           | 1 (toolbar)          | KEEP App, DELETE Pages
+/api/teams/[teamId]/billing                              | app/api/teams/[teamId]/billing/route.ts                                            | pages/api/teams/[teamId]/billing/index.ts                                            |        55 |          59 | Yes          | 1 (SWR use-billing)  | KEEP App, DELETE Pages
+/api/teams/[teamId]/billing/cancel                       | app/api/teams/[teamId]/billing/cancel/route.ts                                     | pages/api/teams/[teamId]/billing/cancel.ts                                           |       110 |          16 | Yes (stub)   | 1 (confirm-cancel)   | KEEP App, DELETE Pages
+/api/teams/[teamId]/billing/cancellation-feedback        | app/api/teams/[teamId]/billing/cancellation-feedback/route.ts                      | pages/api/teams/[teamId]/billing/cancellation-feedback.ts                             |       118 |          16 | Yes (stub)   | 1 (cancel-modal)     | KEEP App, DELETE Pages
+/api/teams/[teamId]/billing/invoices                     | app/api/teams/[teamId]/billing/invoices/route.ts                                   | pages/api/teams/[teamId]/billing/invoices.ts                                         |        82 |          90 | Yes          | 1 (SWR use-invoices) | KEEP App, DELETE Pages
+/api/teams/[teamId]/billing/manage                       | app/api/teams/[teamId]/billing/manage/route.ts                                     | pages/api/teams/[teamId]/billing/manage.ts                                           |       152 |         157 | Yes          | 0                    | KEEP App, DELETE Pages
+/api/teams/[teamId]/billing/pause                        | app/api/teams/[teamId]/billing/pause/route.ts                                      | pages/api/teams/[teamId]/billing/pause.ts                                            |       157 |          16 | Yes (stub)   | 1 (pause-modal)      | KEEP App, DELETE Pages
+/api/teams/[teamId]/billing/plan                         | app/api/teams/[teamId]/billing/plan/route.ts                                       | pages/api/teams/[teamId]/billing/plan.ts                                             |       112 |         120 | Yes          | 2 (SWR, mutate)      | KEEP App, DELETE Pages
+/api/teams/[teamId]/billing/reactivate                   | app/api/teams/[teamId]/billing/reactivate/route.ts                                 | pages/api/teams/[teamId]/billing/reactivate.ts                                       |       110 |          16 | Yes (stub)   | 0                    | KEEP App, DELETE Pages
+/api/teams/[teamId]/billing/retention-offer              | app/api/teams/[teamId]/billing/retention-offer/route.ts                             | pages/api/teams/[teamId]/billing/retention-offer.ts                                  |       120 |          16 | Yes (stub)   | 1 (retention-modal)  | KEEP App, DELETE Pages
+/api/teams/[teamId]/billing/unpause                      | app/api/teams/[teamId]/billing/unpause/route.ts                                    | pages/api/teams/[teamId]/billing/unpause.ts                                          |       156 |          16 | Yes (stub)   | 1 (unpause-modal)    | KEEP App, DELETE Pages
+/api/teams/[teamId]/billing/upgrade                      | app/api/teams/[teamId]/billing/upgrade/route.ts                                    | pages/api/teams/[teamId]/billing/upgrade.ts                                          |       143 |         158 | Yes          | 0                    | KEEP App, DELETE Pages
+/api/teams/[teamId]/datarooms                            | app/api/teams/[teamId]/datarooms/route.ts                                          | pages/api/teams/[teamId]/datarooms/index.ts                                          |       222 |         268 | Yes          | 3+ (SWR, admin)      | KEEP App, DELETE Pages
+/api/teams/[teamId]/datarooms/[id]                       | app/api/teams/[teamId]/datarooms/[id]/route.ts                                     | pages/api/teams/[teamId]/datarooms/[id]/index.ts                                     |       210 |         269 | Yes          | 5+ (SWR, branding)   | KEEP App, DELETE Pages
+/api/teams/[teamId]/documents                            | app/api/teams/[teamId]/documents/route.ts                                          | pages/api/teams/[teamId]/documents/index.ts                                          |       363 |         385 | Yes          | 4+ (SWR, admin)      | KEEP App, DELETE Pages
+/api/teams/[teamId]/documents/[id]                       | app/api/teams/[teamId]/documents/[id]/route.ts                                     | pages/api/teams/[teamId]/documents/[id]/index.ts                                     |       390 |         352 | Yes          | 5+ (SWR, components) | KEEP App, DELETE Pages
+/api/webhooks/esign                                      | app/api/webhooks/esign/route.ts                                                    | pages/api/webhooks/esign.ts                                                          |       389 |         375 | No           | 0 (webhook)          | KEEP App, DELETE Pages
+/api/webhooks/persona                                    | app/api/webhooks/persona/route.ts                                                  | pages/api/webhooks/persona.ts                                                        |        82 |          88 | No           | 0 (webhook)          | KEEP App, DELETE Pages
+/api/webhooks/plaid                                      | app/api/webhooks/plaid/route.ts                                                    | pages/api/webhooks/plaid.ts                                                          |       360 |         298 | No           | 0 (webhook)          | KEEP App, DELETE Pages
+/api/webhooks/rollbar                                    | app/api/webhooks/rollbar/route.ts                                                  | pages/api/webhooks/rollbar.ts                                                        |       128 |         129 | No           | 0 (webhook)          | KEEP App, DELETE Pages
+/api/webhooks/services/[...path]                         | app/api/webhooks/services/[...path]/route.ts                                       | pages/api/webhooks/services/[...path]/index.ts                                       |      1107 |        1009 | No           | 0 (webhook)          | KEEP App, DELETE Pages
+/api/webhooks/signature                                  | app/api/webhooks/signature/route.ts                                                | pages/api/webhooks/signature.ts                                                      |       377 |         351 | No           | 0 (webhook)          | KEEP App, DELETE Pages
+
+================================================================================
+
+DETAILED ANALYSIS BY CATEGORY
+==============================
+
+CATEGORY 1: BILLING ROUTES (11 routes)
+---------------------------------------
+All 11 Pages Router billing files are marked @deprecated.
+6 of 11 are thin 16-line stubs that delegate to ee/features/billing/.
+The App Router versions are the authoritative implementations with:
+  - Rate limiting (appRouterRateLimit)
+  - RBAC enforcement (enforceRBACAppRouter)
+  - Structured error responses (errorResponse from lib/errors)
+  - Modern App Router patterns (NextRequest/NextResponse)
+
+Frontend callers (SWR hooks):
+  - lib/swr/use-billing.ts -> /api/teams/${teamId}/billing
+  - lib/swr/use-billing.ts -> /api/teams/${teamId}/billing/plan
+  - lib/swr/use-invoices.ts -> /api/teams/${teamId}/billing/invoices
+  - ee/features/billing/ components -> /api/teams/${teamId}/billing/*
+
+Since App Router takes priority, all SWR hooks and fetch calls already
+hit the App Router version. Pages Router versions are dead code.
+
+Verdict: DELETE all 11 Pages Router billing files.
+
+
+CATEGORY 2: LINKS ROUTES (17 routes)
+--------------------------------------
+All 17 Pages Router link files are either @deprecated or don't have
+deprecation markers but have fully equivalent App Router versions.
+
+The App Router versions generally have MORE lines (more complete
+implementations with rate limiting, RBAC, and structured errors).
+
+Key SWR hooks that call these routes:
+  - lib/swr/use-link.ts -> /api/links/${linkId}
+  - lib/swr/use-link.ts -> /api/links/${linkId}/visits
+  - lib/swr/use-link.ts -> /api/links/domains/${domain}/${slug}
+  - lib/swr/use-annotations.ts -> /api/links/${linkId}/annotations
+  - lib/swr/use-annotations.ts -> /api/links/${linkId}/documents/${docId}/annotations
+  - components/links/link-sheet -> /api/links, /api/links/${id}
+  - components/links/links-table -> /api/links/${id}/preview, /archive, /duplicate
+  - components/view/* -> /api/links/download/*
+
+All callers use generic URL paths (not importing from specific router
+files), so they automatically hit the App Router version.
+
+Verdict: DELETE all 17 Pages Router links files.
+
+
+CATEGORY 3: DATAROOM & DOCUMENT BASE ROUTES (4 routes)
+-------------------------------------------------------
+Both /api/teams/[teamId]/datarooms and /api/teams/[teamId]/documents
+have App Router and Pages Router versions. The Pages Router versions
+are all @deprecated.
+
+SWR hooks:
+  - lib/swr/use-datarooms.ts -> /api/teams/${teamId}/datarooms
+  - lib/swr/use-dataroom.ts -> /api/teams/${teamId}/datarooms/${id}
+  - lib/swr/use-documents.ts -> /api/teams/${teamId}/documents
+  - lib/swr/use-document.ts -> /api/teams/${teamId}/documents/${id}
+
+IMPORTANT NOTE: The dataroom and document sub-routes (e.g.,
+/api/teams/[teamId]/datarooms/[id]/documents, folders, groups, views,
+branding, etc.) exist ONLY in Pages Router. Those are NOT duplicates
+and must NOT be deleted. Only the base routes listed above are
+duplicated.
+
+Pages Router base routes are larger (268 vs 222 for datarooms, 385 vs
+363 for documents) but the App Router versions include modern patterns
+(RBAC, rate limiting, structured errors). The extra lines in Pages
+Router are likely from older auth patterns.
+
+Verdict: DELETE all 4 Pages Router base route files.
+  KEEP: All Pages Router dataroom/document SUB-routes (folders, views,
+  groups, branding, conversations, etc.) — these are NOT duplicated.
+
+
+CATEGORY 4: FILE UPLOAD/DOWNLOAD ROUTES (9 routes)
+----------------------------------------------------
+All 9 file handler routes have App Router equivalents. Only
+s3/get-presigned-get-url-proxy is @deprecated. The rest are not marked.
+
+Frontend callers:
+  - lib/files/put-file.ts -> browser-upload, replit-upload, multipart, upload-config
+  - lib/files/get-file.ts -> replit-get, replit-get-proxy, s3/get-presigned-get-url-proxy
+  - lib/utils.ts -> image-upload
+  - components/view/viewer/notion-page.tsx -> file/notion
+
+Since callers use URL path strings, they hit App Router automatically.
+
+Verdict: DELETE all 9 Pages Router file handler files.
+
+
+CATEGORY 5: WEBHOOK HANDLERS (6 routes)
+-----------------------------------------
+All 6 webhook handlers have nearly identical implementations in both
+routers. Both versions have HMAC signature verification. The App Router
+versions are slightly larger (more complete error handling with
+reportError, structured logging).
+
+CRITICAL: Webhooks are called by EXTERNAL services (Stripe, Resend,
+Persona, Plaid, Rollbar, custom). These services are configured to
+call a specific URL. Since Next.js routes App Router over Pages Router,
+the App Router version is what actually handles requests.
+
+Webhook endpoints and their external callers:
+  - /api/webhooks/esign -> Internal e-signature system
+  - /api/webhooks/persona -> Persona KYC service
+  - /api/webhooks/plaid -> Plaid banking service
+  - /api/webhooks/rollbar -> Rollbar error monitoring
+  - /api/webhooks/services/[...path] -> Custom incoming webhooks
+  - /api/webhooks/signature -> E-signature completion events
+
+NOTE: /api/webhooks/stripe-crm and /api/webhooks/resend exist ONLY
+in App Router — no duplicates for those.
+
+Verdict: DELETE all 6 Pages Router webhook files.
+
+
+CATEGORY 6: MISCELLANEOUS (4 routes)
+--------------------------------------
+/api/analytics — Both versions are ~555 lines, nearly identical.
+  Called by 6+ frontend files (admin analytics, dashboard, components).
+  App Router version has modern patterns.
+  Verdict: DELETE Pages Router.
+
+/api/health — Both versions are 113 lines, nearly identical.
+  Called by external monitoring systems (BetterUptime/Pingdom).
+  Listed in route-config.ts as PUBLIC path.
+  App Router version active since App Router takes priority.
+  Verdict: DELETE Pages Router.
+
+/api/progress-token — Both versions are ~70 lines.
+  Called by components/documents/file-process-status-bar.tsx.
+  Verdict: DELETE Pages Router.
+
+/api/record_reaction — Both versions are ~70 lines.
+  Called by components/view/toolbar.tsx.
+  Verdict: DELETE Pages Router.
+
+
+================================================================================
+
+SUMMARY TABLE — DELETION PLAN
+==============================
+
+Category               | Files to Delete | Lines Removed | Risk Level
+-----------------------|-----------------|---------------|------------
+Billing (11 routes)    |              11 |           585 | LOW (all @deprecated, 6 are stubs)
+Links (17 routes)      |              17 |         3,558 | LOW (all @deprecated or fully mirrored)
+Dataroom base (2)      |               2 |           537 | LOW (@deprecated, SWR hits App Router)
+Document base (2)      |               2 |           737 | LOW (@deprecated, SWR hits App Router)
+File handlers (9)      |               9 |         1,025 | LOW (callers use URL strings)
+Webhooks (6)           |               6 |         2,162 | MEDIUM (verify external config)
+Miscellaneous (4)      |               4 |           809 | LOW (callers use URL strings)
+-----------------------|-----------------|---------------|------------
+TOTAL                  |              51 |         9,413 | LOW overall
+
+IMPORTANT WARNINGS:
+1. Before deleting webhook files, verify Stripe Dashboard, Persona
+   Dashboard, and Plaid Dashboard still point to the correct URLs.
+   Since App Router handles requests first, they should work — but
+   verify anyway.
+
+2. Do NOT delete Pages Router files that are NOT in this duplicate
+   list. Many Pages Router routes have no App Router equivalent:
+   - pages/api/auth/[...nextauth].ts (REQUIRED for NextAuth)
+   - pages/api/sign/[token].ts (signing endpoint)
+   - pages/api/teams/[teamId]/datarooms/[id]/documents/*
+   - pages/api/teams/[teamId]/datarooms/[id]/folders/*
+   - pages/api/teams/[teamId]/datarooms/[id]/groups/*
+   - pages/api/teams/[teamId]/datarooms/[id]/views/*
+   - pages/api/teams/[teamId]/documents/[id]/views/*
+   - pages/api/teams/[teamId]/documents/[id]/annotations/*
+   - pages/api/conversations/[[...conversations]].ts
+   - pages/api/mupdf/*
+   - pages/api/jobs/*
+   - pages/api/sign/*
+   - And ~230 more Pages Router-only routes
+
+3. After deletion, run:
+   - npx tsc --noEmit (verify zero TypeScript errors)
+   - npm test (verify all tests pass)
+   - Verify SWR hooks still resolve correctly in browser
+
+================================================================================
+
+FILES TO DELETE (complete list)
+===============================
+
+# Billing (11 files)
+pages/api/teams/[teamId]/billing/index.ts
+pages/api/teams/[teamId]/billing/cancel.ts
+pages/api/teams/[teamId]/billing/cancellation-feedback.ts
+pages/api/teams/[teamId]/billing/invoices.ts
+pages/api/teams/[teamId]/billing/manage.ts
+pages/api/teams/[teamId]/billing/pause.ts
+pages/api/teams/[teamId]/billing/plan.ts
+pages/api/teams/[teamId]/billing/reactivate.ts
+pages/api/teams/[teamId]/billing/retention-offer.ts
+pages/api/teams/[teamId]/billing/unpause.ts
+pages/api/teams/[teamId]/billing/upgrade.ts
+
+# Links (17 files)
+pages/api/links/index.ts
+pages/api/links/[id]/index.ts
+pages/api/links/[id]/annotations.ts
+pages/api/links/[id]/approve-access.ts
+pages/api/links/[id]/archive.ts
+pages/api/links/[id]/documents/[documentId].ts
+pages/api/links/[id]/documents/[documentId]/annotations.ts
+pages/api/links/[id]/duplicate.ts
+pages/api/links/[id]/preview.ts
+pages/api/links/[id]/request-access.ts
+pages/api/links/[id]/visits.ts
+pages/api/links/domains/[...domainSlug].ts
+pages/api/links/download/index.ts
+pages/api/links/download/bulk.ts
+pages/api/links/download/dataroom-document.ts
+pages/api/links/download/dataroom-folder.ts
+pages/api/links/generate-index.ts
+
+# Dataroom & Document base (4 files)
+pages/api/teams/[teamId]/datarooms/index.ts
+pages/api/teams/[teamId]/datarooms/[id]/index.ts
+pages/api/teams/[teamId]/documents/index.ts
+pages/api/teams/[teamId]/documents/[id]/index.ts
+
+# File handlers (9 files)
+pages/api/file/browser-upload.ts
+pages/api/file/image-upload.ts
+pages/api/file/notion/index.ts
+pages/api/file/replit-get.ts
+pages/api/file/replit-get-proxy.ts
+pages/api/file/replit-upload.ts
+pages/api/file/s3/get-presigned-get-url-proxy.ts
+pages/api/file/s3/multipart.ts
+pages/api/file/upload-config.ts
+
+# Webhooks (6 files)
+pages/api/webhooks/esign.ts
+pages/api/webhooks/persona.ts
+pages/api/webhooks/plaid.ts
+pages/api/webhooks/rollbar.ts
+pages/api/webhooks/services/[...path]/index.ts
+pages/api/webhooks/signature.ts
+
+# Miscellaneous (4 files)
+pages/api/analytics/index.ts
+pages/api/health.ts
+pages/api/progress-token.ts
+pages/api/record_reaction.ts
+
+================================================================================
+
+TESTS REFERENCING DELETED FILES
+================================
+
+Check these test files for imports from deleted Pages Router routes:
+
+  __tests__/api/analytics/ — May import pages/api/analytics/index.ts
+  __tests__/api/links/ — May import pages/api/links/*.ts
+  __tests__/api/webhooks/ — May import pages/api/webhooks/*.ts
+  __tests__/deployment/ — May reference /api/health
+
+These tests call routes via URL paths (not direct imports), so they
+should work unchanged since App Router handles the same paths. However,
+any tests that DIRECTLY import the Pages Router handler function will
+need to be updated to import from the App Router version.
+
+================================================================================
+END OF AUDIT

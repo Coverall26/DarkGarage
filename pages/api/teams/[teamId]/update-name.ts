@@ -1,0 +1,98 @@
+// MIGRATION STATUS: LEGACY
+// App Router equivalent: none
+// See docs/PAGES-ROUTER-MIGRATION.md
+import { NextApiRequest, NextApiResponse } from "next";
+
+import { getServerSession } from "next-auth";
+
+import prisma from "@/lib/prisma";
+import { CustomUser } from "@/lib/types";
+import { validateContent } from "@/lib/utils/sanitize-html";
+
+import { authOptions } from "@/lib/auth/auth-options";
+import { reportError } from "@/lib/error";
+import { logger } from "@/lib/logger";
+
+export default async function handle(
+  req: NextApiRequest,
+  res: NextApiResponse,
+) {
+  if (req.method === "PATCH") {
+    // PATCH /api/teams/:teamId/update-name
+    const session = await getServerSession(req, res, authOptions);
+    if (!session) {
+      return res.status(401).end("Unauthorized");
+    }
+
+    const { teamId } = req.query as { teamId: string };
+
+    try {
+      // check if the team exists
+      const team = await prisma.team.findUnique({
+        where: {
+          id: teamId,
+        },
+        include: {
+          users: true,
+        },
+      });
+      if (!team) {
+        return res.status(400).json({ error: "Access denied" });
+      }
+
+      // check if current user is admin of the team
+      const currentUser = team.users.find(
+        (user) => user.userId === (session.user as CustomUser).id,
+      );
+      const isUserAdmin = currentUser && 
+        (currentUser.role === "SUPER_ADMIN" || currentUser.role === "ADMIN");
+      if (!isUserAdmin) {
+        return res
+          .status(403)
+          .json({ error: "Access denied" });
+      }
+
+      // Validate and sanitize the team name
+      let sanitizedName: string;
+      try {
+        sanitizedName = validateContent(req.body.name);
+      } catch (error) {
+        reportError(error as Error);
+        return res.status(400).json({
+          error: {
+            message: "Invalid team name",
+          },
+        });
+      }
+
+      // Check if name exceeds the maximum length (32 characters as per frontend)
+      if (sanitizedName.length > 32) {
+        return res.status(400).json({
+          error: {
+            message: "Team name cannot exceed 32 characters",
+          },
+        });
+      }
+
+      // update name
+      await prisma.team.update({
+        where: {
+          id: teamId,
+        },
+        data: {
+          name: sanitizedName,
+        },
+      });
+
+      return res.status(200).json("Team name updated!");
+    } catch (error) {
+      reportError(error as Error);
+      logger.error("Error updating team name", { module: "teams", metadata: { error: (error as Error).message } });
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  } else {
+    // We only allow PATCH requests
+    res.setHeader("Allow", "[PATCH]");
+    return res.status(405).end(`Method ${req.method} Not Allowed`);
+  }
+}
